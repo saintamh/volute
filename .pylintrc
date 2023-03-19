@@ -1,0 +1,47 @@
+[MESSAGES CONTROL]
+
+disable=
+    consider-using-f-string,
+    missing-docstring,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-instance-attributes,
+
+
+[REPORTS]
+
+# Tells whether to display a full report or only the messages
+reports=no
+score=no
+
+
+[VARIABLES]
+
+# Tells whether we should check for unused import in __init__ files.
+init-import=no
+
+# A regular expression matching the name of dummy variables (i.e. expectedly
+# not used).
+dummy-variables-rgx=_$|\w+_unused
+
+
+[BASIC]
+
+# Remove restrictions on name lengths
+argument-rgx=[a-z_][a-z0-9_]*$
+attr-rgx=[a-z_][a-z0-9_]*$
+class-attribute-rgx=[A-Za-z_][A-Za-z0-9_]*
+function-rgx=[a-z_][a-z0-9_]*$
+method-rgx=[a-z_][a-z0-9_]*$
+variable-rgx=[a-z_][a-z0-9_]*$
+
+
+[FORMAT]
+
+# Maximum number of characters on a single line.
+max-line-length=132
+
+# pylint-quotes plugin config
+string-quote=single-avoid-escape
+triple-quote=single
+docstring-quote=double
