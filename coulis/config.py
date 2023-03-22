@@ -30,26 +30,34 @@ class Config:
     def __init__(
         self,
         box: LatLngBox,
-        kernel_radius_metres: int,
         zoom: int,
+        kernel_radius_metres: int,
         gradient: Gradient = Gradient.GREEN_TO_RED,
         num_colors: int = 200,
+        stretch_to_full_tiles: bool = True,
     ):
         self.color_spectrum = list(compile_color_spectrum(gradient, num_colors))
         self.box = box
         self.zoom = zoom
+
         self.kernel_radius_in_pixels = self._metres_to_pixels(box, kernel_radius_metres, zoom)
 
         # Find the pixel coordinates of the given box.
-        #
-        # We stretch the box a little so that the pixels are at the (0,0) top-left corner of their respective tiles, i.e. we don't
-        # have tiles with blank space in them at the margins of the canvas. This makes the pixel math a little easier when painting
-        # the tiles.
-        #
-        self.top_left_tile = np.array(mercantile.tile(box.west, box.north, zoom)[:2])
-        self.top_left_pixel = self.top_left_tile * 256
-        self.bottom_right_tile = np.array(mercantile.tile(box.east, box.south, zoom)[:2]) + 1
-        self.bottom_right_pixel = self.bottom_right_tile * 256
+        if stretch_to_full_tiles:
+            # We stretch the box a little so that the pixels are at the (0,0) top-left corner of their respective tiles, i.e. we
+            # don't have tiles with blank space in them at the margins of the canvas. This makes the pixel math a little easier
+            # when painting the tiles.
+            self.top_left_tile = np.array(mercantile.tile(box.west, box.north, zoom)[:2])
+            self.top_left_pixel = self.top_left_tile * 256
+            self.bottom_right_tile = np.array(mercantile.tile(box.east, box.south, zoom)[:2]) + 1
+            self.bottom_right_pixel = self.bottom_right_tile * 256
+        else:
+            self.top_left_pixel = np.array(mercantile.tile(box.west, box.north, zoom + 8)[:2])
+            self.top_left_tile = self.top_left_pixel / 256  # type: ignore
+            self.bottom_right_pixel = np.array(mercantile.tile(box.east, box.south, zoom + 8)[:2])
+            self.bottom_right_tile = self.bottom_right_pixel / 256 + 1  # type: ignore
+            self.bottom_right_pixel += 1
+
         self.pixel_size = (
             self.bottom_right_pixel[0] - self.top_left_pixel[0],
             self.bottom_right_pixel[1] - self.top_left_pixel[1],
