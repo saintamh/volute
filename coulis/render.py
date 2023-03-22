@@ -70,12 +70,20 @@ def _create_kernel(radius_in_pixels: int) -> NDArray:
     return kernel
 
 
-def paint_tiles(config: Config, output_root: Path, surface: NDArray) -> None:
+def paint_image(config: Config, surface: NDArray) -> Image.Image:
     # pylint: disable=too-many-locals
     all_values = np.sort(surface[surface>0], axis=None)
     num_colors = len(config.color_spectrum)
     num_values = len(all_values)
+    image = Image.new('RGBA', surface.shape)  # type: ignore
+    pixels = image.load()  # type: ignore
+    for pt, v in np.ndenumerate(surface):
+        vi = bisect_left(all_values, v) / num_values  # type: ignore
+        pixels[pt] = config.color_spectrum[int(vi * num_colors)]
+    return image
 
+
+def save_tiles(config: Config, output_root: Path, image: Image.Image) -> None:
     # i and j are tile indexes within our canvas, so the top left tile has (i,j) == (0,0)
     # x and y are mercator tile numbers
     for (i, x), (j, y) in product(
@@ -83,11 +91,12 @@ def paint_tiles(config: Config, output_root: Path, surface: NDArray) -> None:
         enumerate(range(config.top_left_tile[1], config.bottom_right_tile[1])),
     ):
         tile_file = output_root / f'{x}' / f'{y}.png'
-        tile_img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
-        tile_px = tile_img.load()  # type: ignore
-        for pt, v in np.ndenumerate(surface[i*256:(i+1)*256, j*256:(j+1)*256]):
-            vi = bisect_left(all_values, v) / num_values  # type: ignore
-            tile_px[pt] = config.color_spectrum[int(vi * num_colors)]
+        tile_img = image.crop((
+            i * 256,
+            j * 256,
+            (i + 1) * 256,
+            (j + 1) * 256,
+        ))
         tile_file.parent.mkdir(parents=True, exist_ok=True)
         tile_img.save(tile_file)
 
@@ -98,4 +107,5 @@ def render_heatmap(
     output_root: Path,
 ) -> None:
     surface = compute_surface_matrix(config, latlngs)
-    paint_tiles(config, output_root, surface)
+    image = paint_image(config, surface)
+    save_tiles(config, output_root, image)
