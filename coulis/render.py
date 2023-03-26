@@ -3,9 +3,10 @@
 # standards
 from bisect import bisect_left
 from dataclasses import dataclass
+from functools import lru_cache
 from itertools import product
 from math import exp, hypot
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple  # NB we use `List` and `Tuple` for compat with older Pythons
 
 # 3rd parties
 from haversine import Direction, inverse_haversine
@@ -16,7 +17,7 @@ from PIL import Image
 
 # coulis
 from .colors import compile_color_spectrum
-from .datastructures import Config, LatLng, LatLngBox
+from .datastructures import Config, DataPoint, LatLngBox
 
 
 @dataclass(frozen=True)
@@ -31,12 +32,10 @@ class Geometry:
     bottom_right_tile: NDArray[np.int_]
     bottom_right_pixel: NDArray[np.int_]
     pixel_size: Tuple[int, int]
-    kernel_radius_in_pixels: int
 
     @classmethod
     def compile(
         cls,
-        config: Config,
         box: LatLngBox,
         zoom: int,
         stretch_to_full_tiles: bool = True,
@@ -65,68 +64,50 @@ class Geometry:
                 bottom_right_pixel[0] - top_left_pixel[0],
                 bottom_right_pixel[1] - top_left_pixel[1],
             ),
-            kernel_radius_in_pixels=cls._metres_to_pixels(box, config.kernel_radius_metres, zoom),
         )
-
-    @staticmethod
-    def _metres_to_pixels(box: LatLngBox, metres: int, zoom: int) -> int:
-        # We convert the kernel radius to pixels. Because we use a Mercator projection, a given radius in metres will have
-        # different lengths in pixels depending on the latitude we're at. We use the middle of the box as our reference point. For
-        # a box the size of a city this will have no discernible impact. If the box had the size of a large country or even bigger,
-        # it would start to be a problem, but this little script is going to have other problems before then (memory consumption,
-        # for one).
-        lng1 = (box.east + box.west) / 2
-        lat1 = (box.north + box.south) / 2
-        lat2, lng2 = inverse_haversine(
-            (lat1, lng1),
-            metres / 1000,
-            Direction.EAST,
-        )
-        # Pixel coordinates are at zoom+8, because our tiles are 2**8 pixels square, and since every zoom level doubles the pixel
-        # size of the world, our pixels live in a world 8 zoom levels deeper than the tiles.
-        pt1 = mercantile.tile(lng1, lat1, zoom + 8)
-        pt2 = mercantile.tile(lng2, lat2, zoom + 8)
-        return pt2.x - pt1.x
 
 
 def compute_surface_matrix(
-    geom: Geometry,
+    config: Config,
+    box: LatLngBox,
     zoom: int,
-    latlngs: List[LatLng],
+    data_points: List[DataPoint],
+    geom: Geometry,
 ) -> NDArray:
     """
-    Core function for this whole package. Creates a numpy array whose elements correspond to invidual pixels in the output
-    image, and whose values map directly to the colours of the rendered heatmap (the particulars depend on the Config, but e.g.
-    high values here will become red in the output).
+    Core internal function for this whole package. Creates a numpy array whose elements correspond to invidual pixels in the
+    output image, and whose values map directly to the colours of the rendered heatmap (the particulars depend on the Config, but
+    e.g. high values here will become red in the output).
 
     The returned array has shape (w, h), where w and h are the width and height of the computed image, in pixels. If you're e.g.
     rendering a heatmap for a whole city, this will be one big image that covers the whole city.
     """
 
     density = np.zeros(geom.pixel_size)
-    kernel = _create_kernel(geom.kernel_radius_in_pixels)
-    r2 = kernel.shape[0]
 
-    # `pixel_base` is the top-left corner of the image. We use it to map absolute Mercator pixels to coordinates within our density
-    # matrix. We also add `kernel_radius_in_pixels` to it, so that subtracting it from the absolute Mercator pixel gives us the
-    # top-left corner of the kernel, centered on that pixel
-    pixel_base = np.array(geom.top_left_pixel[:2]) + geom.kernel_radius_in_pixels
+    # `pixel_base` is the top-left corner of the image. We use it to map absolute Mercator pixels, which identify a pixel with a
+    # mercator image of the whole world, to coordinates within our density matrix, which is just a small subset of that image
+    pixel_base = np.array(geom.top_left_pixel[:2])
 
-    for lat, lng in latlngs:
-        (x, y) = np.array(mercantile.tile(lng, lat, zoom + 8)[:2]) - pixel_base
+    for point in data_points:
+        radius_pixels = _metres_to_pixels(box, zoom, point.radius_metres or config.default_radius_metres)
+        kernel = _create_kernel(radius_pixels) * point.weight
+
+        (lat, lng) = point.latlng
+        (x, y) = np.array(mercantile.tile(lng, lat, zoom + 8)[:2]) - pixel_base - radius_pixels
 
         # trim the kernel if it overflows the edges of the density matrix
         stamp = kernel
         if x < 0:
             stamp = stamp[-x:, :]
             x = 0
-        elif x + r2 > density.shape[0]:
-            stamp = stamp[:(density.shape[0] - x - r2), :]
+        elif x + (2 * radius_pixels) > density.shape[0]:
+            stamp = stamp[:(density.shape[0] - x - (2 * radius_pixels)), :]
         if y < 0:
             stamp = stamp[:, -y:]
             y = 0
-        elif y + r2 >= density.shape[1]:
-            stamp = stamp[:, :(density.shape[1] - y - r2)]
+        elif y + (2 * radius_pixels) >= density.shape[1]:
+            stamp = stamp[:, :(density.shape[1] - y - (2 * radius_pixels))]
 
         # stamp it
         density[x:x+stamp.shape[0], y:y+stamp.shape[1]] += stamp
@@ -134,6 +115,28 @@ def compute_surface_matrix(
     return density
 
 
+@lru_cache
+def _metres_to_pixels(box: LatLngBox, zoom: int, metres: int) -> int:
+    # We convert the kernel radius to pixels. Because we use a Mercator projection, a given radius in metres will have
+    # different lengths in pixels depending on the latitude we're at. We use the middle of the box as our reference point. For
+    # a box the size of a city this will have no discernible impact. If the box had the size of a large country or even bigger,
+    # it would start to be a problem, but this little script is going to have other problems before then (memory consumption,
+    # for one).
+    lng1 = (box.east + box.west) / 2
+    lat1 = (box.north + box.south) / 2
+    lat2, lng2 = inverse_haversine(
+        (lat1, lng1),
+        metres / 1000,
+        Direction.EAST,
+    )
+    # Pixel coordinates are at zoom+8, because our tiles are 2**8 pixels square, and since every zoom level doubles the pixel
+    # size of the world, our pixels live in a world 8 zoom levels deeper than the tiles.
+    pt1 = mercantile.tile(lng1, lat1, zoom + 8)
+    pt2 = mercantile.tile(lng2, lat2, zoom + 8)
+    return pt2.x - pt1.x
+
+
+@lru_cache
 def _create_kernel(radius_in_pixels: int) -> NDArray:
     """
     Create a "kernel", a small matrix of dimension 2r * 2r. The centre has high values, and they taper off towards the edges.
@@ -187,7 +190,7 @@ def render_heatmap_to_tiles(
     config: Config,
     box: LatLngBox,
     zoom: int,
-    latlngs: List[LatLng],
+    data_points: List[DataPoint],
 ) -> Iterable[Tuple[int, int, Image.Image]]:
     """
     Renders a heatmap for the given data points, at the given zoom level and with the given config, into a set of Web Mercator
@@ -195,8 +198,8 @@ def render_heatmap_to_tiles(
     integers representing the coordinates of the tile (the coordinates that normally go in the tile URL), and `image` is a
     `Pillow.Image` that the caller can `.save()` into a file.
     """
-    geom = Geometry.compile(config, box, zoom, stretch_to_full_tiles=True)
-    surface = compute_surface_matrix(geom, zoom, latlngs)
+    geom = Geometry.compile(box, zoom, stretch_to_full_tiles=True)
+    surface = compute_surface_matrix(config, box, zoom, data_points, geom)
     image = paint_image(config, surface)
     return _split_into_tiles(geom, image)
 
@@ -205,13 +208,13 @@ def render_heatmap_to_image(
     config: Config,
     box: LatLngBox,
     zoom: int,
-    latlngs: List[LatLng],
+    data_points: List[DataPoint],
 ) -> Image.Image:
     """
     Renders a heatmap for the given data points, at the given zoom level and with the given config, into a single large image
     that covers the entirety of the given box.
     """
-    geom = Geometry.compile(config, box, zoom, stretch_to_full_tiles=False)
-    surface = compute_surface_matrix(geom, zoom, latlngs)
+    geom = Geometry.compile(box, zoom, stretch_to_full_tiles=False)
+    surface = compute_surface_matrix(config, box, zoom, data_points, geom)
     image = paint_image(config, surface)
     return image

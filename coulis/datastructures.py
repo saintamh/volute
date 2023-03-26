@@ -2,7 +2,7 @@
 
 # standards
 import re
-from typing import Iterable, List, NamedTuple
+from typing import Iterable, List, NamedTuple, Optional
 
 # coulis
 from .colors import Gradient
@@ -50,6 +50,16 @@ class LatLngBox(NamedTuple):
         )
 
 
+class DataPoint(NamedTuple):
+    """
+    One data point to be represented on the heatmap.
+    """
+
+    latlng: LatLng
+    weight: float = 1
+    radius_metres: Optional[int] = None
+
+
 class Config(NamedTuple):
     """
     User-configurable parameters to the rendering algorithm, allowing the caller to tweak the output.
@@ -58,7 +68,7 @@ class Config(NamedTuple):
     """
 
     gradient: Gradient = Gradient.GREEN_TO_RED
-    kernel_radius_metres: int = 750
+    default_radius_metres: int = 750
     num_colors: int = 200
 
     @classmethod

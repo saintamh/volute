@@ -5,13 +5,13 @@ from argparse import ArgumentParser, FileType
 import csv
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, TextIO
 
 # 3rd parties
 from flask import Flask, jsonify, request
 
 # coulis
-from coulis import Config, LatLng, LatLngBox, render_heatmap_to_image
+from coulis import Config, DataPoint, LatLng, LatLngBox, render_heatmap_to_image
 
 
 def parse_args():
@@ -20,12 +20,16 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_latlngs(input_file) -> Iterable[LatLng]:
-    for lat_str, lng_str, _count_unused in csv.reader(input_file):
-        yield LatLng(float(lat_str), float(lng_str))
+def load_data_points(input_file: TextIO) -> Iterable[DataPoint]:
+    for row in csv.DictReader(input_file):
+        yield DataPoint(
+            latlng=LatLng(float(row['lat']), float(row['lng'])),
+            weight=float(row['weight']) if 'weight' in row else 1,
+            radius_metres=int(row['radius_metres']) if 'radius_metres' in row else None,
+        )
 
 
-ALL_LATLNGS = list(load_latlngs(parse_args().input_file))
+ALL_DATA_POINTS = list(load_data_points(parse_args().input_file))
 
 
 app = Flask(__name__)
@@ -55,7 +59,7 @@ def render():
         east=float(args.pop('east')),
     )
     zoom = int(args.pop('zoom'))
-    image = render_heatmap_to_image(config, box, zoom, ALL_LATLNGS)
+    image = render_heatmap_to_image(config, box, zoom, ALL_DATA_POINTS)
     output = BytesIO()
     image.save(output, 'PNG')
     return output.getvalue(), 200, {'Content-Type': 'image/png'}
