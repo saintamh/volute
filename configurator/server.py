@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Iterable
 
 # 3rd parties
-from flask import Flask, request
+from flask import Flask, jsonify, request
 
 # coulis
-from coulis import Config, Gradient, LatLng, LatLngBox, compute_surface_matrix, paint_image
+from coulis import Config, LatLng, LatLngBox, render_heatmap_to_image
 
 
 def parse_args():
@@ -32,29 +32,30 @@ app = Flask(__name__)
 
 
 @app.route('/')
-def index():
+def get_index():
     index_html_file = Path(__file__).parent / 'index.html'
     return index_html_file.open('rb')  # it's in binary mode, pylint: disable=unspecified-encoding
 
 
+@app.route('/config')
+def get_config():
+    return jsonify({
+        'parameters': Config.json_definition(),
+    })
+
+
 @app.route('/render')
 def render():
-    args = dict(request.args)
-    config = Config(
-        box=LatLngBox(
-            south=float(args['south']),
-            west=float(args['west']),
-            north=float(args['north']),
-            east=float(args['east']),
-        ),
-        zoom=int(args['zoom']),
-        kernel_radius_metres=int(args['kernel_radius_metres']),
-        gradient=getattr(Gradient, args['gradient'].upper()),
-        num_colors=int(args['num_colors']),
-        stretch_to_full_tiles=False,
+    args: dict[str, str] = dict(request.args)
+    config = Config.from_string_args(args)
+    box = LatLngBox(
+        south=float(args.pop('south')),
+        west=float(args.pop('west')),
+        north=float(args.pop('north')),
+        east=float(args.pop('east')),
     )
-    surface = compute_surface_matrix(config, ALL_LATLNGS)
-    image = paint_image(config, surface)
+    zoom = int(args.pop('zoom'))
+    image = render_heatmap_to_image(config, box, zoom, ALL_LATLNGS)
     output = BytesIO()
     image.save(output, 'PNG')
     return output.getvalue(), 200, {'Content-Type': 'image/png'}

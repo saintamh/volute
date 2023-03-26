@@ -1,25 +1,5 @@
 // file: index.js
 
-const PARAMETERS = [
-  {
-    id: "kernel_radius_metres", 
-    type: "int",
-    defaultValue: 750,
-  },
-  {
-    id: "gradient",
-    type: "select",
-    options: ["GREEN_TO_RED"],
-    defaultValue: "GREEN_TO_RED",
-  },
-  {
-    id: "num_colors",
-    type: "int",
-    defaultValue: 200,
-  },
-];
-
-
 function initMap(updateSelection, onOverlayLoaded) {
   const map = new L.map('map', {
     center: [55.9412, -3.1915],
@@ -75,9 +55,9 @@ function initMap(updateSelection, onOverlayLoaded) {
 }
 
 
-function initConfig(updateSelection) {
+function initConfigSelector(parameters, updateSelection) {
   const container = document.getElementById('parameters');
-  const inputWidgets = PARAMETERS.map(parameterInputWidget);
+  const inputWidgets = parameters.map(parameterInputWidget);
 
   function currentSelection() {
     return Object.fromEntries(
@@ -88,6 +68,13 @@ function initConfig(updateSelection) {
   function onsubmit() {
     updateSelection(currentSelection());
     return false;
+  }
+
+  function idToLabel(id) {
+    return id
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (m) => m[0].toUpperCase());
   }
 
   function parameterInputWidget(param, setValue) {
@@ -107,7 +94,7 @@ function initConfig(updateSelection) {
         ...param.options.map((option) => node(
           'option',
           {value: option, selected: option == param.defaultValue},
-          option
+          idToLabel(option),
         ))
       );
     } else {
@@ -121,11 +108,11 @@ function initConfig(updateSelection) {
     node(
       'form',
       { onsubmit },
-      ...PARAMETERS.map((param, index) => 
+      ...parameters.map((param, index) => 
         node(
           'fieldset',
           {},
-          node('legend', {}, param.id),
+          node('legend', {}, idToLabel(param.id)),
           inputWidgets[index],
         )
       ),
@@ -158,7 +145,7 @@ function node(tagName, attributes={}, ...children) {
 }
 
 
-function main() {
+function main(config) {
   const selection = {};
   function updateSelection(newValues) {
     Object.assign(selection, newValues);
@@ -192,15 +179,20 @@ function main() {
     initialSelection: initialMapSelection,
     setOverlayUrl,
   } = initMap(updateSelection, onOverlayLoaded);
+
   const {
     initialSelection: initialConfigSelection,
     onStartingLoading,
     onFinishedLoading,
-  } = initConfig(updateSelection);
+  } = initConfigSelector(config.parameters, updateSelection);
 
   Object.assign(selection, initialMapSelection, initialConfigSelection);
   applySelection();
 }
 
 
-window.onload = main;
+window.onload = () => {
+  fetch('/config')
+    .then((response) => response.json())
+    .then((config) => main(config))
+};

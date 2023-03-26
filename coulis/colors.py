@@ -17,7 +17,16 @@ class Gradient:
     lowest_value: float
     highest_value: float
 
+    BLUE_TO_RED: ClassVar['Gradient']
     GREEN_TO_RED: ClassVar['Gradient']
+
+
+Gradient.BLUE_TO_RED = Gradient(
+    lowest_hue=2.0 / 3.0,
+    highest_hue=0.0,
+    lowest_value=0.35,
+    highest_value=0.85,
+)
 
 
 Gradient.GREEN_TO_RED = Gradient(

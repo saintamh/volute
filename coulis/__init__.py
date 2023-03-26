@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
 from .colors import Gradient, RgbaColor
-from .config import Config
-from .datastructures import LatLng, LatLngBox
-from .render import compute_surface_matrix, paint_image, render_heatmap
+from .datastructures import Config, LatLng, LatLngBox
+from .render import render_heatmap_to_image, render_heatmap_to_tiles

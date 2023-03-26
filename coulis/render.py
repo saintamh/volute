@@ -2,37 +2,118 @@
 
 # standards
 from bisect import bisect_left
+from dataclasses import dataclass
 from itertools import product
 from math import exp, hypot
-from pathlib import Path
-from typing import List
+from typing import Iterable, List, Tuple
 
 # 3rd parties
+from haversine import Direction, inverse_haversine
 import mercantile
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
 # coulis
-from .config import Config
-from .datastructures import LatLng
+from .colors import compile_color_spectrum
+from .datastructures import Config, LatLng, LatLngBox
+
+
+@dataclass(frozen=True)
+class Geometry:
+    """
+    This internal data structure holds the pixel dimension, pixel coordinates and tile coordinates of the area we want to
+    render.
+    """
+
+    top_left_tile: NDArray[np.int_]
+    top_left_pixel: NDArray[np.int_]
+    bottom_right_tile: NDArray[np.int_]
+    bottom_right_pixel: NDArray[np.int_]
+    pixel_size: Tuple[int, int]
+    kernel_radius_in_pixels: int
+
+    @classmethod
+    def compile(
+        cls,
+        config: Config,
+        box: LatLngBox,
+        zoom: int,
+        stretch_to_full_tiles: bool = True,
+    ) -> 'Geometry':
+        # Find the pixel coordinates of the given box.
+        if stretch_to_full_tiles:
+            # We stretch the box a little so that the pixels are at the (0,0) top-left corner of their respective tiles, i.e. we
+            # don't have tiles with blank space in them at the margins of the canvas. This makes the pixel math a little easier
+            # when painting the tiles.
+            top_left_tile = np.array(mercantile.tile(box.west, box.north, zoom)[:2])
+            top_left_pixel = top_left_tile * 256
+            bottom_right_tile = np.array(mercantile.tile(box.east, box.south, zoom)[:2]) + 1
+            bottom_right_pixel = bottom_right_tile * 256
+        else:
+            top_left_pixel = np.array(mercantile.tile(box.west, box.north, zoom + 8)[:2])
+            top_left_tile = top_left_pixel / 256  # type: ignore
+            bottom_right_pixel = np.array(mercantile.tile(box.east, box.south, zoom + 8)[:2])
+            bottom_right_tile = bottom_right_pixel / 256 + 1  # type: ignore
+            bottom_right_pixel += 1
+        return cls(
+            top_left_tile,
+            top_left_pixel,
+            bottom_right_tile,
+            bottom_right_pixel,
+            pixel_size=(
+                bottom_right_pixel[0] - top_left_pixel[0],
+                bottom_right_pixel[1] - top_left_pixel[1],
+            ),
+            kernel_radius_in_pixels=cls._metres_to_pixels(box, config.kernel_radius_metres, zoom),
+        )
+
+    @staticmethod
+    def _metres_to_pixels(box: LatLngBox, metres: int, zoom: int) -> int:
+        # We convert the kernel radius to pixels. Because we use a Mercator projection, a given radius in metres will have
+        # different lengths in pixels depending on the latitude we're at. We use the middle of the box as our reference point. For
+        # a box the size of a city this will have no discernible impact. If the box had the size of a large country or even bigger,
+        # it would start to be a problem, but this little script is going to have other problems before then (memory consumption,
+        # for one).
+        lng1 = (box.east + box.west) / 2
+        lat1 = (box.north + box.south) / 2
+        lat2, lng2 = inverse_haversine(
+            (lat1, lng1),
+            metres / 1000,
+            Direction.EAST,
+        )
+        # Pixel coordinates are at zoom+8, because our tiles are 2**8 pixels square, and since every zoom level doubles the pixel
+        # size of the world, our pixels live in a world 8 zoom levels deeper than the tiles.
+        pt1 = mercantile.tile(lng1, lat1, zoom + 8)
+        pt2 = mercantile.tile(lng2, lat2, zoom + 8)
+        return pt2.x - pt1.x
 
 
 def compute_surface_matrix(
-    config: Config,
+    geom: Geometry,
+    zoom: int,
     latlngs: List[LatLng],
 ) -> NDArray:
-    density = np.zeros(config.pixel_size)
-    kernel = _create_kernel(config.kernel_radius_in_pixels)
+    """
+    Core function for this whole package. Creates a numpy array whose elements correspond to invidual pixels in the output
+    image, and whose values map directly to the colours of the rendered heatmap (the particulars depend on the Config, but e.g.
+    high values here will become red in the output).
+
+    The returned array has shape (w, h), where w and h are the width and height of the computed image, in pixels. If you're e.g.
+    rendering a heatmap for a whole city, this will be one big image that covers the whole city.
+    """
+
+    density = np.zeros(geom.pixel_size)
+    kernel = _create_kernel(geom.kernel_radius_in_pixels)
     r2 = kernel.shape[0]
 
     # `pixel_base` is the top-left corner of the image. We use it to map absolute Mercator pixels to coordinates within our density
     # matrix. We also add `kernel_radius_in_pixels` to it, so that subtracting it from the absolute Mercator pixel gives us the
     # top-left corner of the kernel, centered on that pixel
-    pixel_base = np.array(config.top_left_pixel[:2]) + config.kernel_radius_in_pixels
+    pixel_base = np.array(geom.top_left_pixel[:2]) + geom.kernel_radius_in_pixels
 
     for lat, lng in latlngs:
-        (x, y) = np.array(mercantile.tile(lng, lat, config.zoom + 8)[:2]) - pixel_base
+        (x, y) = np.array(mercantile.tile(lng, lat, zoom + 8)[:2]) - pixel_base
 
         # trim the kernel if it overflows the edges of the density matrix
         stamp = kernel
@@ -71,41 +152,66 @@ def _create_kernel(radius_in_pixels: int) -> NDArray:
 
 
 def paint_image(config: Config, surface: NDArray) -> Image.Image:
-    # pylint: disable=too-many-locals
+    """
+    Turns the surface array, which is just an array of numeric values indicating itensity at each pixel, into an image.
+    """
+    num_colors = config.num_colors
+    color_spectrum = list(compile_color_spectrum(config.gradient, num_colors))
     all_values = np.sort(surface[surface>0], axis=None)
-    num_colors = len(config.color_spectrum)
     num_values = len(all_values)
     image = Image.new('RGBA', surface.shape)  # type: ignore
     pixels = image.load()  # type: ignore
     for pt, v in np.ndenumerate(surface):
         vi = bisect_left(all_values, v) / num_values  # type: ignore
-        pixels[pt] = config.color_spectrum[int(vi * num_colors)]
+        pixels[pt] = color_spectrum[int(vi * num_colors)]
     return image
 
 
-def save_tiles(config: Config, output_root: Path, image: Image.Image) -> None:
+def _split_into_tiles(geom: Geometry, image: Image.Image) -> Iterable[Tuple[int, int, Image.Image]]:
     # i and j are tile indexes within our canvas, so the top left tile has (i,j) == (0,0)
     # x and y are mercator tile numbers
     for (i, x), (j, y) in product(
-        enumerate(range(config.top_left_tile[0], config.bottom_right_tile[0])),
-        enumerate(range(config.top_left_tile[1], config.bottom_right_tile[1])),
+        enumerate(range(geom.top_left_tile[0], geom.bottom_right_tile[0])),
+        enumerate(range(geom.top_left_tile[1], geom.bottom_right_tile[1])),
     ):
-        tile_file = output_root / f'{x}' / f'{y}.png'
         tile_img = image.crop((
             i * 256,
             j * 256,
             (i + 1) * 256,
             (j + 1) * 256,
         ))
-        tile_file.parent.mkdir(parents=True, exist_ok=True)
-        tile_img.save(tile_file)
+        yield x, y, tile_img
 
 
-def render_heatmap(
+def render_heatmap_to_tiles(
     config: Config,
+    box: LatLngBox,
+    zoom: int,
     latlngs: List[LatLng],
-    output_root: Path,
-) -> None:
-    surface = compute_surface_matrix(config, latlngs)
+) -> Iterable[Tuple[int, int, Image.Image]]:
+    """
+    Renders a heatmap for the given data points, at the given zoom level and with the given config, into a set of Web Mercator
+    image tiles that cover the entirety of the given box. Returns a sequence of `(x, y, image)` tuples, where `x` and `y` are
+    integers representing the coordinates of the tile (the coordinates that normally go in the tile URL), and `image` is a
+    `Pillow.Image` that the caller can `.save()` into a file.
+    """
+    geom = Geometry.compile(config, box, zoom, stretch_to_full_tiles=True)
+    surface = compute_surface_matrix(geom, zoom, latlngs)
     image = paint_image(config, surface)
-    save_tiles(config, output_root, image)
+    return _split_into_tiles(geom, image)
+
+
+def render_heatmap_to_image(
+    config: Config,
+    box: LatLngBox,
+    zoom: int,
+    latlngs: List[LatLng],
+) -> Image.Image:
+    """
+    Renders a heatmap for the given data points, at the given zoom level and with the given config, into a single large image
+    that covers the entirety of the given box.
+    """
+    geom = Geometry.compile(config, box, zoom, stretch_to_full_tiles=False)
+    surface = compute_surface_matrix(geom, zoom, latlngs)
+    image = paint_image(config, surface)
+    return image
