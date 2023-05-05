@@ -5,13 +5,16 @@ from argparse import ArgumentParser, FileType
 import csv
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, TextIO
+from typing import Iterable, TextIO, Tuple
 
 # 3rd parties
 from flask import Flask, jsonify, request
+from PIL import Image
 
 # coulis
-from coulis import Config, DataPoint, LatLng, LatLngBox, render_heatmap_to_image
+from coulis.datastructures import Config, DataPoint, LatLng, LatLngBox
+from coulis.render import render_heatmap_to_image
+from .histogram import render_histogram
 
 
 def parse_args():
@@ -48,8 +51,7 @@ def get_config():
     })
 
 
-@app.route('/render')
-def render():
+def _parse_render_query() -> Tuple[Config, LatLngBox, int]:
     args: dict[str, str] = dict(request.args)
     config = Config.from_string_args(args)
     box = LatLngBox(
@@ -59,10 +61,30 @@ def render():
         east=float(args.pop('east')),
     )
     zoom = int(args.pop('zoom'))
-    image = render_heatmap_to_image(config, box, zoom, ALL_DATA_POINTS)
+    return config, box, zoom
+
+
+ResponseTuple = Tuple[bytes, int, dict[str, str]]
+
+
+def _image_response(image: Image.Image) -> ResponseTuple:
     output = BytesIO()
     image.save(output, 'PNG')
     return output.getvalue(), 200, {'Content-Type': 'image/png'}
+
+
+@app.route('/render')
+def render():
+    config, box, zoom = _parse_render_query()
+    image = render_heatmap_to_image(config, box, zoom, ALL_DATA_POINTS)
+    return _image_response(image)
+
+
+@app.route('/histogram')
+def histogram():
+    config, box, zoom = _parse_render_query()
+    image = render_histogram(config, box, zoom, ALL_DATA_POINTS)
+    return _image_response(image)
 
 
 if __name__ == '__main__':

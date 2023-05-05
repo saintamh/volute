@@ -83,10 +83,10 @@ def compute_surface_matrix(
     rendering a heatmap for a whole city, this will be one big image that covers the whole city.
     """
 
-    density = np.zeros(geom.pixel_size)
+    surface = np.zeros(geom.pixel_size)
 
     # `pixel_base` is the top-left corner of the image. We use it to map absolute Mercator pixels, which identify a pixel with a
-    # mercator image of the whole world, to coordinates within our density matrix, which is just a small subset of that image
+    # mercator image of the whole world, to coordinates within our surface matrix, which is just a small subset of that image
     pixel_base = np.array(geom.top_left_pixel[:2])
 
     for point in data_points:
@@ -96,23 +96,35 @@ def compute_surface_matrix(
         (lat, lng) = point.latlng
         (x, y) = np.array(mercantile.tile(lng, lat, zoom + 8)[:2]) - pixel_base - radius_pixels
 
-        # trim the kernel if it overflows the edges of the density matrix
+        # trim the kernel if it overflows the edges of the surface matrix
         stamp = kernel
         if x < 0:
             stamp = stamp[-x:, :]
             x = 0
-        elif x + (2 * radius_pixels) > density.shape[0]:
-            stamp = stamp[:(density.shape[0] - x - (2 * radius_pixels)), :]
+        elif x + (2 * radius_pixels) > surface.shape[0]:
+            stamp = stamp[:(surface.shape[0] - x - (2 * radius_pixels)), :]
         if y < 0:
             stamp = stamp[:, -y:]
             y = 0
-        elif y + (2 * radius_pixels) >= density.shape[1]:
-            stamp = stamp[:, :(density.shape[1] - y - (2 * radius_pixels))]
+        elif y + (2 * radius_pixels) >= surface.shape[1]:
+            stamp = stamp[:, :(surface.shape[1] - y - (2 * radius_pixels))]
 
         # stamp it
-        density[x:x+stamp.shape[0], y:y+stamp.shape[1]] += stamp
+        surface[x:x+stamp.shape[0], y:y+stamp.shape[1]] += stamp
 
-    return density
+    # Taking the log a bunch of times accentuates the hotter areas. Otherwise you get a map that is all green, except for a few
+    # reddish spots.
+    for _ in range(config.num_loggings):
+        surface = np.log(surface + 1)
+
+    # Normalise the surface to values between 0 and 1. The lowest value on the surface becomes 0, the highest peak becomes 1.
+    surface = (surface - np.amin(surface)) / np.amax(surface)
+
+    # The "high trim" makes the red stand out more in the hottest areas
+    surface[surface > config.high_trim] = config.high_trim
+    surface /= config.high_trim
+
+    return surface
 
 
 @lru_cache
@@ -140,7 +152,7 @@ def _metres_to_pixels(box: LatLngBox, zoom: int, metres: int) -> int:
 def _create_kernel(radius_in_pixels: int) -> NDArray:
     """
     Create a "kernel", a small matrix of dimension 2r * 2r. The centre has high values, and they taper off towards the edges.
-    We'll then add that kernel to the density matrix at every location in the dataset.
+    We'll then add that kernel to the surface matrix at every location in the dataset.
     """
     r2 = 2 * radius_in_pixels
     kernel = np.zeros([r2, r2])

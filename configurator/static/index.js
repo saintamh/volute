@@ -1,5 +1,10 @@
 // file: index.js
 
+const SERVER = "http://delphi:2100";
+
+//--------------------------------------------------------------------------------------------------
+// map
+
 function initMap(updateSelection, onOverlayLoaded) {
   const map = new L.map('map', {
     center: [55.9412, -3.1915],
@@ -48,12 +53,14 @@ function initMap(updateSelection, onOverlayLoaded) {
 
   return {
     initialSelection: currentSelection(),
-    setOverlayUrl: (url) => {
-      overlay.setUrl(url);
+    setOverlayParams(params) {
+      overlay.setUrl(`${SERVER}/render?${params}`);
     },
   }
 }
 
+//--------------------------------------------------------------------------------------------------
+// Config selector (LHS bar)
 
 function initConfigSelector(parameters, updateSelection) {
   const container = document.getElementById('parameters');
@@ -78,13 +85,14 @@ function initConfigSelector(parameters, updateSelection) {
   }
 
   function parameterInputWidget(param, setValue) {
-    if (param.type == "int") {
+    if (param.type == "int" || param.type == "float") {
       return node(
         'input',
         {
           name: param.id,
           type: "number",
           value: param.defaultValue,
+          step: param.type == "int" ? 1 : 0.01,
         },
       );
     } else if (param.type == "select") {
@@ -123,15 +131,38 @@ function initConfigSelector(parameters, updateSelection) {
 
   return {
     initialSelection: currentSelection(),
-    onStartingLoading: () => {
+    onStartingLoading() {
       throbber.classList.remove('hidden');
     },
-    onFinishedLoading: () => {
+    onFinishedLoading() {
       throbber.classList.add('hidden');
     },
   };
 }
 
+//--------------------------------------------------------------------------------------------------
+// histogram
+
+function initHistogram() {
+  const container = document.getElementById('histogram');
+  const image = node('img', {
+    onError() {
+      if (image.src != 'about:blank') {
+        image.src = 'about:blank';
+      }
+    },
+  })
+  container.append(image)
+
+  return {
+    setHistogramParams(params) {
+      image.src = `${SERVER}/histogram?${params}`;
+    },
+  };
+}
+
+//--------------------------------------------------------------------------------------------------
+// utils
 
 function node(tagName, attributes={}, ...children) {
   const element = document.createElement(tagName);
@@ -144,6 +175,8 @@ function node(tagName, attributes={}, ...children) {
   return element;
 }
 
+//--------------------------------------------------------------------------------------------------
+// main
 
 function main(config) {
   const selection = {};
@@ -153,22 +186,24 @@ function main(config) {
   }
 
   let loading = false;
-  let nextUrl = null;
+  let nextParams = null;
   function applySelection() {
-    const url = 'http://delphi:2100/render?' + new URLSearchParams(selection);
+    const params = new URLSearchParams(selection);
     if (loading) {
-      nextUrl = url;
+      nextParams = params;
     } else {
       loading = true;
       onStartingLoading();
-      setOverlayUrl(url);
+      setOverlayParams(params);
+      setHistogramParams(params);
     }
   }
 
   function onOverlayLoaded() {
-    if (nextUrl) {
-      setOverlayUrl(nextUrl);
-      nextUrl = null;
+    if (nextParams) {
+      setOverlayParams(nextParams);
+      setHistogramParams(nextParams);
+      nextParams = null;
     } else {
       loading = false;
       onFinishedLoading();
@@ -177,7 +212,7 @@ function main(config) {
 
   const {
     initialSelection: initialMapSelection,
-    setOverlayUrl,
+    setOverlayParams,
   } = initMap(updateSelection, onOverlayLoaded);
 
   const {
@@ -185,6 +220,10 @@ function main(config) {
     onStartingLoading,
     onFinishedLoading,
   } = initConfigSelector(config.parameters, updateSelection);
+
+  const {
+    setHistogramParams,
+  } = initHistogram();
 
   Object.assign(selection, initialMapSelection, initialConfigSelection);
   applySelection();
@@ -196,3 +235,5 @@ window.onload = () => {
     .then((response) => response.json())
     .then((config) => main(config))
 };
+
+//--------------------------------------------------------------------------------------------------

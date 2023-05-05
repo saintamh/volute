@@ -20,3 +20,10 @@ input[type=submit] {
 .hidden {
     display: none;
 }
+
+#histogram {
+    position: fixed;
+    right: 30px;
+    bottom: 30px;
+    z-index: 1000;
+}

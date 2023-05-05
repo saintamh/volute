@@ -70,6 +70,8 @@ class Config(NamedTuple):
     gradient: Gradient = Gradient.GREEN_TO_RED
     default_radius_metres: int = 750
     num_colors: int = 200
+    high_trim: float = 0.99
+    num_loggings: int = 10
 
     @classmethod
     def json_definition(cls) -> List[dict]:
