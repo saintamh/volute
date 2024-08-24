@@ -17,8 +17,8 @@ class Gradient:
     lowest_value: float
     highest_value: float
 
-    BLUE_TO_RED: ClassVar['Gradient']
-    GREEN_TO_RED: ClassVar['Gradient']
+    BLUE_TO_RED: ClassVar["Gradient"]
+    GREEN_TO_RED: ClassVar["Gradient"]
 
 
 Gradient.BLUE_TO_RED = Gradient(
@@ -45,7 +45,7 @@ def compile_color_spectrum(gradient: Gradient, num_colors: int) -> Iterable[Rgba
         pos = i / (num_colors - 1)
 
         # This makes a lot of low-valued areas more green, and allows more nuance within the high-valued areas
-        apos = pos ** 10
+        apos = pos**10
 
         # This next line gives more importance to the colours towards the middle of the spectrum. I find that without this the
         # plot looks more all-green and all-red with only a little orange in between, despite there being in fact equal numbers

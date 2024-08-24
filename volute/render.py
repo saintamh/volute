@@ -39,7 +39,7 @@ class Geometry:
         box: LatLngBox,
         zoom: int,
         stretch_to_full_tiles: bool = True,
-    ) -> 'Geometry':
+    ) -> "Geometry":
         # Find the pixel coordinates of the given box.
         if stretch_to_full_tiles:
             # We stretch the box a little so that the pixels are at the (0,0) top-left corner of their respective tiles, i.e. we
@@ -102,15 +102,15 @@ def compute_surface_matrix(
             stamp = stamp[-x:, :]
             x = 0
         elif x + (2 * radius_pixels) > surface.shape[0]:
-            stamp = stamp[:(surface.shape[0] - x - (2 * radius_pixels)), :]
+            stamp = stamp[: (surface.shape[0] - x - (2 * radius_pixels)), :]
         if y < 0:
             stamp = stamp[:, -y:]
             y = 0
         elif y + (2 * radius_pixels) >= surface.shape[1]:
-            stamp = stamp[:, :(surface.shape[1] - y - (2 * radius_pixels))]
+            stamp = stamp[:, : (surface.shape[1] - y - (2 * radius_pixels))]
 
         # stamp it
-        surface[x:x+stamp.shape[0], y:y+stamp.shape[1]] += stamp
+        surface[x : x + stamp.shape[0], y : y + stamp.shape[1]] += stamp
 
     # Taking the log a bunch of times accentuates the hotter areas. Otherwise you get a map that is all green, except for a few
     # reddish spots.
@@ -172,9 +172,9 @@ def paint_image(config: Config, surface: NDArray) -> Image.Image:
     """
     num_colors = config.num_colors
     color_spectrum = list(compile_color_spectrum(config.gradient, num_colors))
-    all_values = np.sort(surface[surface>0], axis=None)
+    all_values = np.sort(surface[surface > 0], axis=None)
     num_values = len(all_values)
-    image = Image.new('RGBA', surface.shape)  # type: ignore
+    image = Image.new("RGBA", surface.shape)  # type: ignore
     pixels = image.load()  # type: ignore
     for pt, v in np.ndenumerate(surface):
         vi = bisect_left(all_values, v) / num_values  # type: ignore
@@ -189,12 +189,14 @@ def _split_into_tiles(geom: Geometry, image: Image.Image) -> Iterable[Tuple[int,
         enumerate(range(geom.top_left_tile[0], geom.bottom_right_tile[0])),
         enumerate(range(geom.top_left_tile[1], geom.bottom_right_tile[1])),
     ):
-        tile_img = image.crop((
-            i * 256,
-            j * 256,
-            (i + 1) * 256,
-            (j + 1) * 256,
-        ))
+        tile_img = image.crop(
+            (
+                i * 256,
+                j * 256,
+                (i + 1) * 256,
+                (j + 1) * 256,
+            )
+        )
         yield x, y, tile_img
 
 

@@ -1,0 +1,14 @@
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    "venv",
+]
+
+line-length = 132
+
+[lint]
+select = ["E", "F", "W", "C"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]

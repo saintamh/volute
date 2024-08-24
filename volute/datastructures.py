@@ -22,11 +22,11 @@ class LatLng(NamedTuple):
     lng: float
 
     def __str__(self) -> str:
-        return '%.05f,%.05f' % self
+        return "%.05f,%.05f" % self
 
     @classmethod
-    def from_str(cls, latlng_str: str) -> 'LatLng':
-        return cls(*map(float, re.split(r'\s*,\s*', latlng_str)))
+    def from_str(cls, latlng_str: str) -> "LatLng":
+        return cls(*map(float, re.split(r"\s*,\s*", latlng_str)))
 
 
 class LatLngBox(NamedTuple):
@@ -41,7 +41,7 @@ class LatLngBox(NamedTuple):
     east: float
 
     @classmethod
-    def bounding(cls, latlngs: Iterable[LatLng]) -> 'LatLngBox':
+    def bounding(cls, latlngs: Iterable[LatLng]) -> "LatLngBox":
         return cls(
             south=min(ll.lat for ll in latlngs),
             west=min(ll.lng for ll in latlngs),
@@ -80,24 +80,24 @@ class Config(NamedTuple):
             field_type = cls.__annotations__[field]
             default_value = cls._field_defaults[field]  # it exists, pylint: disable=no-member
             if field_type is Gradient:
-                options = [key for key in dir(Gradient) if re.search(r'^[A-Z][A-Z_]+$', key)]  # ugly but works
+                options = [key for key in dir(Gradient) if re.search(r"^[A-Z][A-Z_]+$", key)]  # ugly but works
                 item = {
-                    'id': field,
-                    'type': 'select',
-                    'options': options,
-                    'defaultValue': next(key for key in options if getattr(Gradient, key) == default_value),
+                    "id": field,
+                    "type": "select",
+                    "options": options,
+                    "defaultValue": next(key for key in options if getattr(Gradient, key) == default_value),
                 }
             else:
                 item = {
-                    'id': field,
-                    'type': field_type.__name__,
-                    'defaultValue': default_value,
+                    "id": field,
+                    "type": field_type.__name__,
+                    "defaultValue": default_value,
                 }
             all_items.append(item)
         return all_items
 
     @classmethod
-    def from_string_args(cls, args: dict[str, str]) -> 'Config':
+    def from_string_args(cls, args: dict[str, str]) -> "Config":
         values: dict[str, object] = {}
         for field in cls._fields:
             if field not in args:

@@ -40,8 +40,3 @@ variable-rgx=[a-z_][a-z0-9_]*$
 
 # Maximum number of characters on a single line.
 max-line-length=132
-
-# pylint-quotes plugin config
-string-quote=single-avoid-escape
-triple-quote=single
-docstring-quote=double
