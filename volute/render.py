@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-# coulis
+# this project
 from .colors import compile_color_spectrum
 from .datastructures import Config, DataPoint, LatLngBox
 

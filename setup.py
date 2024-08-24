@@ -4,12 +4,12 @@ import setuptools
 
 
 setuptools.setup(
-    name='coulis',
+    name='volute',
     version='1.0.0',
-    url='https://github.com/saintamh/coulis',
+    url='https://github.com/saintamh/volute',
     author='Hervé Saint-Amand',
-    packages=['coulis'],
-    package_data={'coulis': ['py.typed']},
+    packages=['volute'],
+    package_data={'volute': ['py.typed']},
     install_requires=[
         'haversine~=2.0',
         'mercantile~=1.0',

@@ -4,7 +4,7 @@
 import re
 from typing import Iterable, List, NamedTuple, Optional
 
-# coulis
+# this project
 from .colors import Gradient
 
 
@@ -64,7 +64,7 @@ class Config(NamedTuple):
     """
     User-configurable parameters to the rendering algorithm, allowing the caller to tweak the output.
 
-    The web-based configurator in `coulis.configurator` lets you change the values here and see the output in real time.
+    The web-based configurator in `volute.configurator` lets you change the values here and see the output in real time.
     """
 
     gradient: Gradient = Gradient.GREEN_TO_RED

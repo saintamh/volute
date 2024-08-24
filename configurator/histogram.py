@@ -10,9 +10,9 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-# coulis
-from coulis.datastructures import Config, DataPoint, LatLngBox
-from coulis.render import Geometry, compute_surface_matrix
+# this project
+from volute.datastructures import Config, DataPoint, LatLngBox
+from volute.render import Geometry, compute_surface_matrix
 
 
 def paint_histogram(surface: NDArray) -> Image.Image:

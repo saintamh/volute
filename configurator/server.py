@@ -11,9 +11,9 @@ from typing import Iterable, TextIO, Tuple
 from flask import Flask, jsonify, request
 from PIL import Image
 
-# coulis
-from coulis.datastructures import Config, DataPoint, LatLng, LatLngBox
-from coulis.render import render_heatmap_to_image
+# volute
+from volute.datastructures import Config, DataPoint, LatLng, LatLngBox
+from volute.render import render_heatmap_to_image
 from .histogram import render_histogram
 
 
