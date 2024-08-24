@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
 import setuptools
+
+
+README_FILE = Path(__file__).parent / "README.md"
+
+LONG_DESCRIPTION = README_FILE.read_text("UTF-8")
 
 
 setuptools.setup(
     name="volute",
-    version="1.0.0",
+    version="1.0.1",
+    description="A Python library for rendering heatmaps to Web Mercator tiles",
+    long_description=LONG_DESCRIPTION,
+    long_description_content_type="text/markdown",
     url="https://github.com/saintamh/volute",
     author="Hervé Saint-Amand",
     packages=["volute"],
