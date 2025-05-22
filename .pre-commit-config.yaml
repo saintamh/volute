@@ -17,12 +17,6 @@ repos:
     types: [python]
     args: [format, --check]
 
-  - id: pylint
-    name: pylint
-    entry: pylint
-    language: python
-    types: [python]
-
   - id: mypy
     name: mypy
     entry: mypy

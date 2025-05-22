@@ -1,13 +1,11 @@
 // file: index.js
 
-const SERVER = "http://delphi:2100";
-
 //--------------------------------------------------------------------------------------------------
 // map
 
-function initMap(updateSelection, onOverlayLoaded) {
+function initMap(center, updateSelection, onOverlayLoaded) {
   const map = new L.map('map', {
-    center: [55.9412, -3.1915],
+    center: [center.lat, center.lng],
     zoom: 14,
     minZoom: 12,
     maxZoom: 15
@@ -15,7 +13,7 @@ function initMap(updateSelection, onOverlayLoaded) {
 
   // L.tileLayer(
   //   'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png/',
-  //   zIndex: 1,
+  //   { zIndex: 1 },
   // ).addTo(map);
 
   let bounds = map.getBounds();
@@ -30,7 +28,8 @@ function initMap(updateSelection, onOverlayLoaded) {
   })
 
   L.tileLayer(
-    'http://delphi:8000/maps/base-tiles/saintamh.jhcipa67/{z}/{x}/{y}.png',
+    //'https://maps.saintamh.org/tile/google-street-view-lines/{z}/{x}/{y}',
+    'https://saintamh.org/maps/base-tiles/saintamh.jhcipa67/{z}/{x}/{y}.png',
     {
       zIndex: 3,
       pane: 'overlayPane',
@@ -54,7 +53,7 @@ function initMap(updateSelection, onOverlayLoaded) {
   return {
     initialSelection: currentSelection(),
     setOverlayParams(params) {
-      overlay.setUrl(`${SERVER}/render?${params}`);
+      overlay.setUrl(`/render?${params}`);
     },
   }
 }
@@ -156,7 +155,7 @@ function initHistogram() {
 
   return {
     setHistogramParams(params) {
-      image.src = `${SERVER}/histogram?${params}`;
+      image.src = `/histogram?${params}`;
     },
   };
 }
@@ -213,7 +212,7 @@ function main(config) {
   const {
     initialSelection: initialMapSelection,
     setOverlayParams,
-  } = initMap(updateSelection, onOverlayLoaded);
+  } = initMap(config.center, updateSelection, onOverlayLoaded);
 
   const {
     initialSelection: initialConfigSelection,

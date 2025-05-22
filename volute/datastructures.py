@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 # standards
+from enum import StrEnum
 import re
-from typing import Iterable, List, NamedTuple, Optional
+from typing import Iterable, NamedTuple, Optional
 
 # this project
 from .colors import Gradient
@@ -42,6 +43,7 @@ class LatLngBox(NamedTuple):
 
     @classmethod
     def bounding(cls, latlngs: Iterable[LatLng]) -> "LatLngBox":
+        latlngs = list(latlngs)
         return cls(
             south=min(ll.lat for ll in latlngs),
             west=min(ll.lng for ll in latlngs),
@@ -60,6 +62,11 @@ class DataPoint(NamedTuple):
     radius_metres: Optional[int] = None
 
 
+class Cumulator(StrEnum):
+    SUM = "sum"
+    MEAN = "mean"
+
+
 class Config(NamedTuple):
     """
     User-configurable parameters to the rendering algorithm, allowing the caller to tweak the output.
@@ -70,42 +77,7 @@ class Config(NamedTuple):
     gradient: Gradient = Gradient.GREEN_TO_RED
     default_radius_metres: int = 750
     num_colors: int = 200
-    high_trim: float = 0.99
-    num_loggings: int = 10
-
-    @classmethod
-    def json_definition(cls) -> List[dict]:
-        all_items = []
-        for field in cls._fields:
-            field_type = cls.__annotations__[field]
-            default_value = cls._field_defaults[field]  # it exists, pylint: disable=no-member
-            if field_type is Gradient:
-                options = [key for key in dir(Gradient) if re.search(r"^[A-Z][A-Z_]+$", key)]  # ugly but works
-                item = {
-                    "id": field,
-                    "type": "select",
-                    "options": options,
-                    "defaultValue": next(key for key in options if getattr(Gradient, key) == default_value),
-                }
-            else:
-                item = {
-                    "id": field,
-                    "type": field_type.__name__,
-                    "defaultValue": default_value,
-                }
-            all_items.append(item)
-        return all_items
-
-    @classmethod
-    def from_string_args(cls, args: dict[str, str]) -> "Config":
-        values: dict[str, object] = {}
-        for field in cls._fields:
-            if field not in args:
-                continue  # and fall back to the default
-            field_type = cls.__annotations__[field]
-            str_value = args[field]
-            if field_type is Gradient:
-                values[field] = getattr(Gradient, str_value)
-            else:
-                values[field] = field_type(str_value)
-        return Config(**values)  # type: ignore
+    low_trim: float = 0.25
+    high_trim: float = 0.75
+    num_loggings: int = 1
+    cumulator: Cumulator = Cumulator.SUM

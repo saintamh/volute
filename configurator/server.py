@@ -3,15 +3,19 @@
 # standards
 from argparse import ArgumentParser, FileType
 import csv
+from enum import Enum
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, TextIO, Tuple
+import re
+from statistics import median
+from typing import Iterable, List, TextIO, Tuple
 
 # 3rd parties
 from flask import Flask, jsonify, request
 from PIL import Image
 
 # volute
+from volute.colors import Gradient
 from volute.datastructures import Config, DataPoint, LatLng, LatLngBox
 from volute.render import render_heatmap_to_image
 from .histogram import render_histogram
@@ -33,6 +37,47 @@ def load_data_points(input_file: TextIO) -> Iterable[DataPoint]:
 
 
 ALL_DATA_POINTS = list(load_data_points(parse_args().input_file))
+print(len(ALL_DATA_POINTS), "data points")
+
+
+def config_json_definition() -> List[dict]:
+    all_items = []
+    for field in Config._fields:
+        field_type = Config.__annotations__[field]
+        default_value = Config._field_defaults[field]  # it exists, pylint: disable=no-member
+        if field_type is Gradient:
+            options = [key for key in dir(Gradient) if re.search(r"^[A-Z][A-Z_]+$", key)]  # ugly but works
+            item = {
+                "id": field,
+                "type": "select",
+                "options": options,
+                "defaultValue": next(key for key in options if getattr(Gradient, key) == default_value),
+            }
+        else:
+            item = {
+                "id": field,
+                "type": field_type.__name__,
+                "defaultValue": default_value,
+            }
+            if issubclass(field_type, Enum):
+                item["type"] = "select"
+                item["options"] = [o.value for o in field_type]
+        all_items.append(item)
+    return all_items
+
+
+def config_from_string_args(args: dict[str, str]) -> "Config":
+    values: dict[str, object] = {}
+    for field in Config._fields:
+        if field not in args:
+            continue  # and fall back to the default
+        field_type = Config.__annotations__[field]
+        str_value = args[field]
+        if field_type is Gradient:
+            values[field] = getattr(Gradient, str_value)
+        else:
+            values[field] = field_type(str_value)
+    return Config(**values)  # type: ignore
 
 
 app = Flask(__name__)
@@ -48,14 +93,18 @@ def get_index():
 def get_config():
     return jsonify(
         {
-            "parameters": Config.json_definition(),
-        }
+            "parameters": config_json_definition(),
+            "center": {
+                "lat": median(p.latlng.lat for p in ALL_DATA_POINTS),
+                "lng": median(p.latlng.lng for p in ALL_DATA_POINTS),
+            },
+        },
     )
 
 
 def _parse_render_query() -> Tuple[Config, LatLngBox, int]:
     args: dict[str, str] = dict(request.args)
-    config = Config.from_string_args(args)
+    config = config_from_string_args(args)
     box = LatLngBox(
         south=float(args.pop("south")),
         west=float(args.pop("west")),

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 # standards
-from bisect import bisect_left
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import product
@@ -17,7 +16,7 @@ from PIL import Image
 
 # this project
 from .colors import compile_color_spectrum
-from .datastructures import Config, DataPoint, LatLngBox
+from .datastructures import Config, Cumulator, DataPoint, LatLngBox
 
 
 @dataclass(frozen=True)
@@ -67,7 +66,7 @@ class Geometry:
         )
 
 
-def compute_surface_matrix(
+def compute_surface_matrix(  # noqa: C901  # yea it's complex
     config: Config,
     box: LatLngBox,
     zoom: int,
@@ -85,32 +84,48 @@ def compute_surface_matrix(
 
     surface = np.zeros(geom.pixel_size)
 
+    if config.cumulator == Cumulator.MEAN:
+        divisor = np.zeros(geom.pixel_size)
+
     # `pixel_base` is the top-left corner of the image. We use it to map absolute Mercator pixels, which identify a pixel with a
     # mercator image of the whole world, to coordinates within our surface matrix, which is just a small subset of that image
     pixel_base = np.array(geom.top_left_pixel[:2])
 
     for point in data_points:
         radius_pixels = _metres_to_pixels(box, zoom, point.radius_metres or config.default_radius_metres)
-        kernel = _create_kernel(radius_pixels) * point.weight
+
+        # The "kernel" is the stamp that we're going to impress upon the surface. Its weight depends on the data point. The divisor
+        # has the same shape, but always has weight 1, so that at the end we can divide to obtain a mean.
+        divisor_kernel = _create_kernel(radius_pixels)
+        kernel = divisor_kernel * point.weight
 
         (lat, lng) = point.latlng
         (x, y) = np.array(mercantile.tile(lng, lat, zoom + 8)[:2]) - pixel_base - radius_pixels
 
         # trim the kernel if it overflows the edges of the surface matrix
-        stamp = kernel
         if x < 0:
-            stamp = stamp[-x:, :]
+            kernel = kernel[-x:, :]
+            divisor_kernel = divisor_kernel[-x:, :]
             x = 0
         elif x + (2 * radius_pixels) > surface.shape[0]:
-            stamp = stamp[: (surface.shape[0] - x - (2 * radius_pixels)), :]
+            kernel = kernel[: (surface.shape[0] - x - (2 * radius_pixels)), :]
+            divisor_kernel = divisor_kernel[: (surface.shape[0] - x - (2 * radius_pixels)), :]
         if y < 0:
-            stamp = stamp[:, -y:]
+            kernel = kernel[:, -y:]
+            divisor_kernel = divisor_kernel[:, -y:]
             y = 0
         elif y + (2 * radius_pixels) >= surface.shape[1]:
-            stamp = stamp[:, : (surface.shape[1] - y - (2 * radius_pixels))]
+            kernel = kernel[:, : (surface.shape[1] - y - (2 * radius_pixels))]
+            divisor_kernel = divisor_kernel[:, : (surface.shape[1] - y - (2 * radius_pixels))]
 
         # stamp it
-        surface[x : x + stamp.shape[0], y : y + stamp.shape[1]] += stamp
+        surface[x : x + kernel.shape[0], y : y + kernel.shape[1]] += kernel
+        if config.cumulator == Cumulator.MEAN:
+            divisor[x : x + divisor_kernel.shape[0], y : y + divisor_kernel.shape[1]] += divisor_kernel
+
+    if config.cumulator == Cumulator.MEAN:
+        divisor[divisor == 0] = 1
+        surface /= divisor
 
     # Taking the log a bunch of times accentuates the hotter areas. Otherwise you get a map that is all green, except for a few
     # reddish spots.
@@ -121,8 +136,10 @@ def compute_surface_matrix(
     surface = (surface - np.amin(surface)) / np.amax(surface)
 
     # The "high trim" makes the red stand out more in the hottest areas
-    surface[surface > config.high_trim] = config.high_trim
-    surface /= config.high_trim
+    if config.low_trim != 0 or config.high_trim != 1:
+        surface[surface < config.low_trim] = config.low_trim
+        surface[surface > config.high_trim] = config.high_trim
+        surface /= config.high_trim - config.low_trim
 
     return surface
 
@@ -170,16 +187,19 @@ def paint_image(config: Config, surface: NDArray) -> Image.Image:
     """
     Turns the surface array, which is just an array of numeric values indicating itensity at each pixel, into an image.
     """
-    num_colors = config.num_colors
-    color_spectrum = list(compile_color_spectrum(config.gradient, num_colors))
-    all_values = np.sort(surface[surface > 0], axis=None)
-    num_values = len(all_values)
-    image = Image.new("RGBA", surface.shape)  # type: ignore
-    pixels = image.load()  # type: ignore
-    for pt, v in np.ndenumerate(surface):
-        vi = bisect_left(all_values, v) / num_values  # type: ignore
-        pixels[pt] = color_spectrum[int(vi * num_colors)]
-    return image
+    color_spectrum = np.array(list(compile_color_spectrum(config.gradient, config.num_colors)), "uint8")
+    min_value, max_value = np.amin(surface), np.amax(surface)
+    pixels = color_spectrum[
+        np.floor(
+            # transpose because `surface` is (x, y) and PIL wants (y, x)
+            (surface.transpose(1, 0) - min_value)
+            # normalise to [0..1]
+            / (max_value - min_value)
+            # then scale to the length of the gradient, so the values can be used as indices in `color_spectrum`
+            * (config.num_colors - 1),
+        ).astype(int)
+    ]
+    return Image.fromarray(pixels, "RGBA")
 
 
 def _split_into_tiles(geom: Geometry, image: Image.Image) -> Iterable[Tuple[int, int, Image.Image]]:
