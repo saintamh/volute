@@ -44,7 +44,7 @@ def config_json_definition() -> List[dict]:
     all_items = []
     for field in Config._fields:
         field_type = Config.__annotations__[field]
-        default_value = Config._field_defaults[field]  # it exists, pylint: disable=no-member
+        default_value = Config._field_defaults[field]
         if field_type is Gradient:
             options = [key for key in dir(Gradient) if re.search(r"^[A-Z][A-Z_]+$", key)]  # ugly but works
             item = {
@@ -86,7 +86,7 @@ app = Flask(__name__)
 @app.route("/")
 def get_index():
     index_html_file = Path(__file__).parent / "index.html"
-    return index_html_file.open("rb")  # it's in binary mode, pylint: disable=unspecified-encoding
+    return index_html_file.open("rb")
 
 
 @app.route("/config")
