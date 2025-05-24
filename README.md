@@ -18,6 +18,10 @@ config = Config(
     num_colors=200,
 )
 
+# Load your data. In their simplest form, `DataPoint` objects are just latlngs, and the
+# output heatmap will show the density of data points across the map.
+data_points = [DataPoint(LatLng(lat, lng)) for lat, lng in my_data_source()]
+
 tiles_root = Path("/www/my/tiles")
 for zoom in range(12, 16):
 
@@ -26,7 +30,7 @@ for zoom in range(12, 16):
         config,
         LatLngBox(south=55.8516, west=-3.4306, north=56.0059, east=-2.9480),
         zoom,
-        [DataPoint(LatLng(lat, lng)) for lat, lng in my_data_points],
+        data_points,
     )
 
     # Then we can save the tiles to disk
@@ -38,4 +42,14 @@ for zoom in range(12, 16):
 
 # Examples
 
-See it in action: https://saintamh.org/maps/edinburgh-street-crime/
+Here is one output tile:
+
+![Sample output tile](samples/15-16094-10211.volute.png)
+
+If you overlay a transparent image of the road networks, it looks like this:
+
+![Sample output tile](samples/15-16094-10211.roads.png)
+
+See it in action on a complete map here:
+
+https://saintamh.org/maps/edinburgh-street-crime/
